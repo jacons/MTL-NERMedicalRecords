@@ -22,4 +22,4 @@ if __name__ == '__main__':
     if conf.cuda:
         model = model.to(conf.gpu)
 
-    train(model, handlerA, handlerB, df_train, df_val, conf)
+    train(model, handlerA, handlerB, df_train[:10000], df_val[:10000], conf)

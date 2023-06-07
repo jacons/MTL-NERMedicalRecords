@@ -14,7 +14,7 @@ from Parsing.parser_utils import EntityHandler, align_tags
 
 def scores(confusion: Tensor, all_metrics=False):
     """
-    Given a Confusion matrix, returns an F1-score, if all_metrics is false, then returns only a mean of F1-score
+    Given a Confusion matrix, returns an F1-score if all_metrics is false, then returns only a mean of F1-score
     """
     length = confusion.shape[0]
     iter_label = range(length)
@@ -88,7 +88,7 @@ def eval_model(model: nn.Module, dataset: DataFrame, conf: Configuration, handle
         logits = masked_select(path, tag_mask)
         labels = masked_select(labels_ids, tag_mask)
 
-        # before mapping id -> labels , we have to build a confusion matrix
+        # before mapping id -> labels, we have to build a confusion matrix
         for lbl, pre in zip(labels, logits):
             confusion[lbl, pre] += 1
 

@@ -135,11 +135,11 @@ def align_tags(labels: list, word_ids: list):
     """
     This function aligns the labels associated with a sentence and returns an "aligned" list and a "tag mask".
 
-    "aligned" list: represents a list of labels that are aligned with the word-pieces of the sentence,
+    "Aligned" list: represents a list of labels that are aligned with the word-pieces of the sentence,
                     if a token is split in more than one sub-word, the tag associated is repeated.
                     The second tag (the sequence of sub-words) always starts with "I-".
 
-    "tag mask": represents a list of booleans, where each value corresponding to a sub-token. The boolean
+    "Tag mask": represents a list of booleans, where each value corresponding to a sub-token. The boolean
                     is true if the sub-token is the first one (of sub-words) else false.
 
     *WordPiece is a sub-word segmentation algorithm

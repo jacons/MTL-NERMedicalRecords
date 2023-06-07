@@ -33,7 +33,6 @@ class MTBERTClassification(BertPreTrainedModel):  # noqa
             Linear(config.hidden_size, num_labels_b)
         )
 
-        self.loss_fn = CrossEntropyLoss()
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -55,6 +54,7 @@ class MTBERTClassification(BertPreTrainedModel):  # noqa
             output_attentions: Optional[bool] = None,
             output_hidden_states: Optional[bool] = None,
     ) -> Tuple[Tensor]:
+
         feature_extracted = self.bert(
             input_ids,
             attention_mask=attention_mask,
@@ -75,9 +75,11 @@ class MTBERTClassification(BertPreTrainedModel):  # noqa
         loss = None
         if labels_a is not None and labels_b is not None:
             # Loss A
-            loss_a = self.loss_fn(logits_a.view(-1, self.num_labels_a), labels_a.view(-1))
+            loss_fn_a = CrossEntropyLoss()
+            loss_a = loss_fn_a(logits_a.view(-1, self.num_labels_a), labels_a.view(-1))
             # Loss B
-            loss_b = self.loss_fn(logits_b.view(-1, self.num_labels_b), labels_b.view(-1))
+            loss_fn_b = CrossEntropyLoss()
+            loss_b = loss_fn_b(logits_b.view(-1, self.num_labels_b), labels_b.view(-1))
 
             loss = 0.5 * (loss_a + loss_b)
 

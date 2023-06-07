@@ -1,7 +1,6 @@
 from pandas import DataFrame
 from torch import no_grad, zeros, masked_select
 from torch.nn import Module
-from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
 from torch.utils.data import DataLoader
@@ -77,7 +76,6 @@ def train(model: Module,
             loss_train += loss.item()
 
             loss.backward()
-            clip_grad_norm_(model.parameters(), 2.0)
             optimizer.step()
         # ========== Training Phase ==========
 
@@ -85,7 +83,6 @@ def train(model: Module,
         confusion_a = zeros(size=(max_labels_a, max_labels_a))
         confusion_b = zeros(size=(max_labels_b, max_labels_b))
 
-        model.eval()
         with no_grad():  # Validation phase
             for inputs_ids, att_mask, tag_maks, labels_a, labels_b in tqdm(vl, desc="Evaluation",
                                                                            mininterval=conf.refresh_rate):
@@ -108,10 +105,14 @@ def train(model: Module,
                 logits_b = logits_b[0].argmax(1)  # label predicted
 
                 labels_a = masked_select(labels_a, tag_maks)
+                labels_b = masked_select(labels_b, tag_maks)
+
+                logits_a = masked_select(logits_a, tag_maks)
+                logits_b = masked_select(logits_b, tag_maks)
+
                 for lbl, pre in zip(labels_a, logits_a):
                     confusion_a[lbl, pre] += 1
 
-                labels_b = masked_select(labels_b, tag_maks)
                 for lbl, pre in zip(labels_b, logits_b):
                     confusion_b[lbl, pre] += 1
 

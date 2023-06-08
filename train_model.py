@@ -17,9 +17,9 @@ if __name__ == '__main__':
 
     df_train, df_val, _ = holdout(dt)
 
-    model = Classifier(conf.bert, len(handlerA.set_entities), len(handlerB.set_entities))
+    model = Classifier(conf.bert, handlerA.id2label, handlerB.id2label)
 
     if conf.cuda:
         model = model.to(conf.gpu)
 
-    train(model, handlerA, handlerB, df_train[:10000], df_val[:10000], conf)
+    train(model, handlerA, handlerB, df_train, df_val, conf)

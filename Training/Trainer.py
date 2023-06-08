@@ -1,5 +1,5 @@
 from pandas import DataFrame
-from torch import no_grad, zeros, masked_select
+from torch import no_grad, zeros, masked_select, LongTensor
 from torch.nn import Module
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
@@ -69,7 +69,7 @@ def train(model: Module,
         # ========== Training Phase ==========
 
         #  There inputs are created in "NerDataset" class
-        for inputs_ids, att_mask, _, labels_a, labels_b in tqdm(tr, desc="Training", mininterval=conf.refresh_rate):
+        for inputs_ids, att_mask, _, _, labels_a, labels_b in tqdm(tr, desc="Training", mininterval=conf.refresh_rate):
             optimizer.zero_grad(set_to_none=True)
 
             loss, _, _ = model(inputs_ids, att_mask, labels_a, labels_b)
@@ -84,38 +84,49 @@ def train(model: Module,
         confusion_b = zeros(size=(max_labels_b, max_labels_b))
 
         with no_grad():  # Validation phase
-            for inputs_ids, att_mask, tag_maks, labels_a, labels_b in tqdm(vl, desc="Evaluation",
-                                                                           mininterval=conf.refresh_rate):
-                loss, logits_a, logits_b = model(inputs_ids, att_mask, labels_a, labels_b)
+            for fields in tqdm(vl, desc="Evaluation", mininterval=conf.refresh_rate):
+                inputs_ids, att_mask, tag_maks_a, tag_maks_b, labels_a, labels_b = fields
+
+                loss, pathw_a, pathw_b = model(inputs_ids, att_mask, labels_a, labels_b)
                 loss_val += loss.item()
 
                 # ----- CRF Version -----
-                # path, _ = logits[0]
-                # path = torch.LongTensor(path)
+                path_a = LongTensor(pathw_a[0][0])
+                path_b = LongTensor(pathw_b[0][0])
 
-                # if conf.cuda:
-                #    path = path.to(conf.gpu)
-                # logits = masked_select(path, tag_maks)
-                # labels = masked_select(labels, tag_maks)
-                # for lbl, pre in zip(labels, logits):
-                #   confusion[lbl, pre] += 1
+                if conf.cuda:
+                    path_a = path_a.to(conf.gpu)
+                    path_b = path_b.to(conf.gpu)
+
+                labels_a = masked_select(labels_a, tag_maks_a)
+                labels_b = masked_select(labels_b, tag_maks_b)
+
+                path_a = masked_select(path_a, tag_maks_a)
+                path_b = masked_select(path_b, tag_maks_b)
+
+                for lbl, pre in zip(labels_a, path_a):
+                    confusion_a[lbl, pre] += 1
+
+                for lbl, pre in zip(labels_b, path_b):
+                    confusion_b[lbl, pre] += 1
                 # ----- CRF Version -----
 
+                """
                 logits_a = logits_a[0].argmax(1)  # label predicted
                 logits_b = logits_b[0].argmax(1)  # label predicted
 
-                labels_a = masked_select(labels_a, tag_maks)
-                labels_b = masked_select(labels_b, tag_maks)
+                labels_a = masked_select(labels_a, tag_maks_a)
+                labels_b = masked_select(labels_b, tag_maks_b)
 
-                logits_a = masked_select(logits_a, tag_maks)
-                logits_b = masked_select(logits_b, tag_maks)
+                logits_a = masked_select(logits_a, tag_maks_a)
+                logits_b = masked_select(logits_b, tag_maks_b)
 
                 for lbl, pre in zip(labels_a, logits_a):
                     confusion_a[lbl, pre] += 1
 
                 for lbl, pre in zip(labels_b, logits_b):
                     confusion_b[lbl, pre] += 1
-
+                """
         # ========== Validation Phase ==========
         model.train()
 

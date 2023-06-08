@@ -54,22 +54,27 @@ class ModelVersion:
 def padding_batch(batch: list):
     # data = list of an element, length = batch_size
 
-    inputs_ids, att_mask, tag_maks = [], [], []
-    labels_a, labels_b = [], []
+    inputs_ids, att_mask = [], []
 
-    for inputs_ids_, att_mask_, tag_maks_, labels_a_, labels_b_ in batch:
+    tag_maks_a, labels_a = [], []
+    tag_maks_b, labels_b = [], []
+
+    for inputs_ids_, att_mask_, tag_maks_a_, tag_maks_b_, labels_a_, labels_b_ in batch:
         inputs_ids.append(inputs_ids_)
         att_mask.append(att_mask_)
-        tag_maks.append(tag_maks_)
+
+        tag_maks_a.append(tag_maks_a_)
+        tag_maks_b.append(tag_maks_b_)
 
         labels_a.append(labels_a_)
         labels_b.append(labels_b_)
 
     inputs_ids = pad_sequence(inputs_ids, batch_first=True)
     att_mask = pad_sequence(att_mask, batch_first=True)
-    tag_maks = pad_sequence(tag_maks, batch_first=True)
+    tag_maks_a = pad_sequence(tag_maks_a, batch_first=True)
+    tag_maks_b = pad_sequence(tag_maks_b, batch_first=True)
 
     labels_a = pad_sequence(labels_a, batch_first=True)
     labels_b = pad_sequence(labels_b, batch_first=True)
 
-    return inputs_ids, att_mask, tag_maks, labels_a, labels_b
+    return inputs_ids, att_mask, tag_maks_a, tag_maks_b, labels_a, labels_b

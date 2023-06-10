@@ -6,13 +6,6 @@ from torch import Tensor
 from torch.nn import Sequential, Dropout, Linear, Module, LeakyReLU, LogSoftmax
 from transformers import BertPreTrainedModel, BertModel
 
-"""
-secondo me si può snellire il codice facendo facendo bern form pretrained e rimuovendo
-uno strato di classe
-
-
-"""
-
 
 class ClassifierHead(Module):
     def __init__(self, dropout: float, hidden: int, id2label: dict):
@@ -44,7 +37,6 @@ class ClassifierHead(Module):
 
 
 class MTBERTClassification(BertPreTrainedModel):  # noqa
-
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
 
     def __init__(self, config, id2label_a: dict, id2label_b: dict):
@@ -78,11 +70,9 @@ class MTBERTClassification(BertPreTrainedModel):  # noqa
             # Parameters for token
             input_ids: Optional[Tensor] = None,
             attention_mask: Optional[Tensor] = None,
-
             # labels
             labels_a: Optional[Tensor] = None,
             labels_b: Optional[Tensor] = None,
-
             # Other parameters
             token_type_ids: Optional[Tensor] = None,
             position_ids: Optional[Tensor] = None,
@@ -115,19 +105,3 @@ class MTBERTClassification(BertPreTrainedModel):  # noqa
             best_pathways = (out_a[0], out_b[0])
 
         return ((loss,) + best_pathways) if loss is not None else best_pathways
-
-
-class Classifier(Module):
-    def __init__(self, bert: str, id2label_a: dict, id2label_b: dict):
-        """
-        Bert model
-        :param bert: Name of bert used
-        """
-        super(Classifier, self).__init__()
-
-        self.model = MTBERTClassification.from_pretrained(bert, id2label_a=id2label_a, id2label_b=id2label_b)
-
-        return
-
-    def forward(self, input_id, mask, labels_a, labels_b):
-        return self.model(input_ids=input_id, attention_mask=mask, labels_a=labels_a, labels_b=labels_b)

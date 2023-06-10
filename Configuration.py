@@ -46,13 +46,12 @@ class Configuration:
         if "param" in conf:
             print("{:<85}".format("Parameters & Values"))
             print("-" * 85)
-            for idx, (k, v) in enumerate(self.param.items()):
-
-                if (idx + 1) % 3 != 0:
-                    print("|{:^14} {:^12}".format(k, v), end='')
-
-                if (idx + 1) % 3 == 0:
-                    print("|{:^14} {:^12}|".format(k, v))
-                    print("-" * 85)
+            param_items = list(self.param.items())
+            num_params = len(param_items)
+            for idx in range(0, num_params, 3):
+                param_slice = param_items[idx:idx + 3]
+                param_row = "|".join("{:^14} {:^12}".format(k, v) for k, v in param_slice)
+                print(param_row)
+                print("-" * 85)
 
         return

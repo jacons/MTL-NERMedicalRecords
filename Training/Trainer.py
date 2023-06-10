@@ -21,12 +21,12 @@ def train(model: Module,
           conf: Configuration):
     """
 
-    :param model:
-    :param e_handler_a:
-    :param e_handler_b:
-    :param df_train:
-    :param df_val:
-    :param conf:
+    :param model: MultiHead Model
+    :param e_handler_a: Handler for the labels a
+    :param e_handler_b: Handler for the labels b
+    :param df_train: training dataset
+    :param df_val: validation dataset
+    :param conf: configuration parameters
     :return:
     """
 
@@ -61,13 +61,14 @@ def train(model: Module,
     scheduler = ReduceLROnPlateau(optimizer, 'min', patience=3)
 
     print("\n--INFO--\tThe Training is started")
-    model.train()
     while (epoch < total_epochs) and (not es.earlyStop):
 
         loss_train, loss_val = 0, 0
+        confusion_a = zeros(size=(max_labels_a, max_labels_a))
+        confusion_b = zeros(size=(max_labels_b, max_labels_b))
 
         # ========== Training Phase ==========
-
+        model.train()
         #  There inputs are created in "NerDataset" class
         for inputs_ids, att_mask, _, _, labels_a, labels_b in tqdm(tr, desc="Training", mininterval=conf.refresh_rate):
             optimizer.zero_grad(set_to_none=True)
@@ -80,19 +81,17 @@ def train(model: Module,
         # ========== Training Phase ==========
 
         # ========== Validation Phase ==========
-        confusion_a = zeros(size=(max_labels_a, max_labels_a))
-        confusion_b = zeros(size=(max_labels_b, max_labels_b))
-
+        model.eval()
         with no_grad():  # Validation phase
             for fields in tqdm(vl, desc="Evaluation", mininterval=conf.refresh_rate):
                 inputs_ids, att_mask, tag_maks_a, tag_maks_b, labels_a, labels_b = fields
 
-                loss, pathw_a, pathw_b = model(inputs_ids, att_mask, labels_a, labels_b)
+                loss, path_a, path_b = model(inputs_ids, att_mask, labels_a, labels_b)
                 loss_val += loss.item()
 
                 # ----- CRF Version -----
-                path_a = LongTensor(pathw_a[0][0])
-                path_b = LongTensor(pathw_b[0][0])
+                path_a = LongTensor(path_a[0][0])
+                path_b = LongTensor(path_b[0][0])
 
                 if conf.cuda:
                     path_a = path_a.to(conf.gpu)
@@ -109,32 +108,17 @@ def train(model: Module,
 
                 for lbl, pre in zip(labels_b, path_b):
                     confusion_b[lbl, pre] += 1
-                # ----- CRF Version -----
 
-                """
-                logits_a = logits_a[0].argmax(1)  # label predicted
-                logits_b = logits_b[0].argmax(1)  # label predicted
-
-                labels_a = masked_select(labels_a, tag_maks_a)
-                labels_b = masked_select(labels_b, tag_maks_b)
-
-                logits_a = masked_select(logits_a, tag_maks_a)
-                logits_b = masked_select(logits_b, tag_maks_b)
-
-                for lbl, pre in zip(labels_a, logits_a):
-                    confusion_a[lbl, pre] += 1
-
-                for lbl, pre in zip(labels_b, logits_b):
-                    confusion_b[lbl, pre] += 1
-                """
         # ========== Validation Phase ==========
-        model.train()
 
         tr_loss, val_loss = (loss_train / tr_size), (loss_val / vl_size)
-        f1_score = (scores(confusion_a) + scores(confusion_b)) / 2
+        f1_scores = scores(confusion_a), scores(confusion_b)
 
-        print(f'Epochs: {epoch + 1} | Loss: {tr_loss: .4f} | Val_Loss: {val_loss: .4f} | F1: {f1_score: .4f}')
+        print(f'Epochs: {epoch + 1} | Loss: {tr_loss: .4f} | Val_Loss: {val_loss: .4f} | '
+              f'F1: {f1_scores[0]: .4f} {f1_scores[1]: .4f}')
+
         epoch += 1
+        f1_score = 0.5 * (f1_scores[0] + f1_scores[1])
 
         if model_version is not None:
             # save the model if it is the best model until now

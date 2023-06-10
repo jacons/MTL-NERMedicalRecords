@@ -69,13 +69,16 @@ class EntityHandler:
         return result
 
 
-def buildDataset(path_files: tuple[str, str], verbose=True) -> Tuple[DataFrame, EntityHandler, EntityHandler]:
+def build_dataset(path_files: tuple[str, str], verbose=True) -> Tuple[DataFrame, EntityHandler, EntityHandler]:
     """
         Build the dataframe of sentences from a path of file
         The dataframe is composed by two columns "sentences" and "labels"
     """
-    sentences, list_of_labels_a, list_of_labels_b = [], [], []
-    set_entities_a, set_entities_b = set(), set()  # set of unique entity found (incrementally updated)
+    sentences = []
+    list_of_labels_a = []
+    list_of_labels_b = []
+    set_entities_a = set()  # set of unique entity found (incrementally updated)
+    set_entities_b = set()  # set of unique entity found (incrementally updated)
 
     gen_a = read_conll(path_files[0])  # Generator for dataset A
     gen_b = read_conll(path_files[1])  # Generator for dataset B
@@ -95,15 +98,16 @@ def buildDataset(path_files: tuple[str, str], verbose=True) -> Tuple[DataFrame, 
 
     if verbose:
         print("Building sentences and tags\n" + "-" * 85)
-        print("|{:^41}|{:^41}|".format("Sentences", len(sentences)))
-        print("|{:^41}|{:^20}|{:^20}|".format("Tags", len(set_entities_a), len(set_entities_b)))
-        print("-" * 85)
-        print("|{:^83}|".format(" - ".join(sorted(set_entities_a))))
-        print("|{:^83}|".format(" - ".join(sorted(set_entities_b))))
-        print("-" * 85)
+        print(f"|{'Sentences':^41}|{'Tags':^41}|")
+        print(f"|{'':-^41}|{'':-^41}|")
+        print(f"|{len(sentences):^41}|{len(set_entities_a):^20}|{len(set_entities_b):^20}|")
+        print(f"|{'':-^41}|{'':-^41}|")
+        print(f"|{' - '.join(sorted(set_entities_a)):^83}|")
+        print(f"|{' - '.join(sorted(set_entities_b)):^83}|")
+        print(f"{'-' * 85}")
 
-    t = {"sentences": sentences, "labels_a": list_of_labels_a, "labels_b": list_of_labels_b}
-    return DataFrame(t).drop_duplicates(), EntityHandler(set_entities_a), EntityHandler(set_entities_b)
+    df_data = {"sentences": sentences, "labels_a": list_of_labels_a, "labels_b": list_of_labels_b}
+    return DataFrame(df_data).drop_duplicates(), EntityHandler(set_entities_a), EntityHandler(set_entities_b)
 
 
 def holdout(df: DataFrame, size: float = 1, verbose=True) -> DataFrame:
@@ -173,9 +177,8 @@ def parse_args():
     p.add_argument('--datasets', type=str, nargs='+',
                    help='Dataset used for training, it will split in training, validation and test', default=None)
 
-    p.add_argument('--models', type=str, nargs='+',
-                   help='Model trained ready to evaluate or use, if list, the order must follow the same of datasets',
-                   default=None)
+    p.add_argument('--model', type=str,
+                   help='Model trained ready to evaluate or use', default=None)
 
     p.add_argument('--model_name', type=str,
                    help='Name to give to a trained model', default=None)

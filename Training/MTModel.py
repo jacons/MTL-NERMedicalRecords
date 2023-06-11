@@ -2,7 +2,7 @@ from typing import Optional
 
 from allennlp.modules import ConditionalRandomField
 from allennlp.modules.conditional_random_field import allowed_transitions
-from torch import Tensor
+from torch import Tensor, LongTensor
 from torch.nn import Sequential, Dropout, Linear, Module, LeakyReLU, LogSoftmax
 from transformers import BertPreTrainedModel, BertModel
 
@@ -24,16 +24,15 @@ class ClassifierHead(Module):
                                                                                 labels=id2label))
 
     def forward(self, feature_extracted: Tensor, attention_mask: Tensor, labels: Tensor):
-        out = self.linear(feature_extracted[0])
+        out = self.linear(feature_extracted)
 
         loss = None
         if labels is not None:
             loss = -self.crf_layer(out, labels, attention_mask) / float(out.size(0))
 
-        best_path = self.crf_layer.viterbi_tags(out, attention_mask)
+        best_path = LongTensor(self.crf_layer.viterbi_tags(out, attention_mask)[0][0])
 
-        output = (best_path,) + feature_extracted[2:]
-        return ((loss,) + output) if loss is not None else output
+        return (loss, best_path) if loss is not None else best_path
 
 
 class MTBERTClassification(BertPreTrainedModel):  # noqa
@@ -92,7 +91,7 @@ class MTBERTClassification(BertPreTrainedModel):  # noqa
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=False,
-        )
+        )[0]
 
         out_a = self.classifierA(feature_extracted, attention_mask, labels_a)
         out_b = self.classifierB(feature_extracted, attention_mask, labels_b)

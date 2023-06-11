@@ -68,6 +68,9 @@ class EntityHandler:
 
         return result
 
+    def __len__(self):
+        return len(self.set_entities)
+
 
 def build_dataset(path_files: tuple[str, str], verbose=True) -> Tuple[DataFrame, EntityHandler, EntityHandler]:
     """

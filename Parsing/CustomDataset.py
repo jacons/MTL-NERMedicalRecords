@@ -11,7 +11,7 @@ from Parsing.parser_utils import EntityHandler, align_tags
 class NerDataset(Dataset):
     # We try to preprocess the data as much as possible before the training.
     def __init__(self, dataset: DataFrame, conf: Configuration,
-                 e_handler_a: EntityHandler, e_handler_b: EntityHandler):
+                 handler_a: EntityHandler, handler_b: EntityHandler):
 
         self.list_of_tokens, self.list_of_att_masks = [], []
 
@@ -28,8 +28,8 @@ class NerDataset(Dataset):
 
             token_text = tokenizer(tokens, is_split_into_words=True)
 
-            aligned_labels_a, tag_mask_a = align_tags(labels_a, token_text.word_ids())
-            aligned_labels_b, tag_mask_b = align_tags(labels_b, token_text.word_ids())
+            align_labels_a, tag_mask_a = align_tags(labels_a, token_text.word_ids())
+            align_labels_b, tag_mask_b = align_tags(labels_b, token_text.word_ids())
 
             # prepare a model's inputs
             input_ids = IntTensor(token_text["input_ids"])
@@ -39,8 +39,8 @@ class NerDataset(Dataset):
             tag_mask_b = BoolTensor(tag_mask_b)
 
             # mapping the list of labels e.g. ["I-DRUG","O"] to list of id of labels e.g. ["4","7"]
-            labels_ids_a = LongTensor(e_handler_a.map_lab2id(aligned_labels_a))
-            labels_ids_b = LongTensor(e_handler_b.map_lab2id(aligned_labels_b))
+            labels_ids_a = LongTensor(handler_a.map_lab2id(align_labels_a))
+            labels_ids_b = LongTensor(handler_b.map_lab2id(align_labels_b))
 
             if conf.cuda:
                 input_ids = input_ids.to(conf.gpu)

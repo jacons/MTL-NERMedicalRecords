@@ -1,5 +1,5 @@
 from pandas import DataFrame
-from torch import no_grad, zeros, masked_select, LongTensor
+from torch import no_grad, zeros, masked_select
 from torch.nn import Module
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
@@ -14,16 +14,16 @@ from Training.trainer_utils import padding_batch, EarlyStopping, ModelVersion
 
 
 def train(model: Module,
-          e_handler_a: EntityHandler,
-          e_handler_b: EntityHandler,
+          handler_a: EntityHandler,
+          handler_b: EntityHandler,
           df_train: DataFrame,
           df_val: DataFrame,
           conf: Configuration):
     """
 
     :param model: MultiHead Model
-    :param e_handler_a: Handler for the labels a
-    :param e_handler_b: Handler for the labels b
+    :param handler_a: Handler for the labels a
+    :param handler_b: Handler for the labels b
     :param df_train: training dataset
     :param df_val: validation dataset
     :param conf: configuration parameters
@@ -32,20 +32,17 @@ def train(model: Module,
 
     # --------- DATASETS ---------
     print("--INFO--\tCreating Dataloader for Training set")
-    tr = DataLoader(NerDataset(df_train, conf, e_handler_a, e_handler_b), collate_fn=padding_batch,
+    tr = DataLoader(NerDataset(df_train, conf, handler_a, handler_b), collate_fn=padding_batch,
                     batch_size=conf.param["batch_size"], shuffle=True)
 
     print("\n--INFO--\tCreating Dataloader for Validation set")
-    vl = DataLoader(NerDataset(df_val, conf, e_handler_a, e_handler_b))
+    vl = DataLoader(NerDataset(df_val, conf, handler_a, handler_b))
     # --------- DATASETS ---------
 
     epoch = 0
     tr_size, vl_size = len(tr), len(vl)
     total_epochs = conf.param["max_epoch"]
     stopping = conf.param["early_stopping"]  # "Patience in early stopping"
-
-    max_labels_a = len(e_handler_a.set_entities)
-    max_labels_b = len(e_handler_b.set_entities)
 
     # --------- Early stopping ---------
     es = EarlyStopping(total_epochs if stopping <= 0 else stopping)
@@ -64,8 +61,8 @@ def train(model: Module,
     while (epoch < total_epochs) and (not es.earlyStop):
 
         loss_train, loss_val = 0, 0
-        confusion_a = zeros(size=(max_labels_a, max_labels_a))
-        confusion_b = zeros(size=(max_labels_b, max_labels_b))
+        confusion_a = zeros(size=(len(handler_a), len(handler_a)))
+        confusion_b = zeros(size=(len(handler_b), len(handler_b)))
 
         # ========== Training Phase ==========
         model.train()
@@ -84,27 +81,23 @@ def train(model: Module,
         model.eval()
         with no_grad():  # Validation phase
             for fields in tqdm(vl, desc="Evaluation", mininterval=conf.refresh_rate):
-                inputs_ids, att_mask, tag_maks_a, tag_maks_b, labels_a, labels_b = fields
+                inputs_ids, att_mask, tag_mask_a, tag_mask_b, labels_a, labels_b = fields
 
                 loss, path_a, path_b = model(inputs_ids, att_mask, labels_a, labels_b)
                 loss_val += loss.item()
-
-                # ----- CRF Version -----
-                path_a = LongTensor(path_a[0][0])
-                path_b = LongTensor(path_b[0][0])
 
                 if conf.cuda:
                     path_a = path_a.to(conf.gpu)
                     path_b = path_b.to(conf.gpu)
 
-                labels_a = masked_select(labels_a, tag_maks_a)
-                labels_b = masked_select(labels_b, tag_maks_b)
-
-                path_a = masked_select(path_a, tag_maks_a)
-                path_b = masked_select(path_b, tag_maks_b)
+                labels_a = masked_select(labels_a, tag_mask_a)
+                path_a = masked_select(path_a, tag_mask_a)
 
                 for lbl, pre in zip(labels_a, path_a):
                     confusion_a[lbl, pre] += 1
+
+                labels_b = masked_select(labels_b, tag_mask_b)
+                path_b = masked_select(path_b, tag_mask_b)
 
                 for lbl, pre in zip(labels_b, path_b):
                     confusion_b[lbl, pre] += 1

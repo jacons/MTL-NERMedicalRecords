@@ -3,7 +3,8 @@ from io import StringIO
 
 import torch
 from pandas import DataFrame
-from torch import Tensor, zeros, IntTensor, BoolTensor, LongTensor, masked_select, nn
+from torch import Tensor, zeros, IntTensor, BoolTensor, LongTensor, masked_select, no_grad
+from torch.nn import Module
 from tqdm import tqdm
 from transformers import BertTokenizerFast
 
@@ -19,96 +20,126 @@ def scores(confusion: Tensor, all_metrics=False):
     length = confusion.shape[0]
     iter_label = range(length)
 
-    accuracy: Tensor = zeros(length)
-    precision: Tensor = zeros(length)
-    recall: Tensor = zeros(length)
-    f1: Tensor = zeros(length)
+    accuracy = zeros(length)
+    precision = zeros(length)
+    recall = zeros(length)
+    f1 = zeros(length)
 
     for i in iter_label:
         fn = torch.sum(confusion[i, :i]) + torch.sum(confusion[i, i + 1:])  # false negative
         fp = torch.sum(confusion[:i, i]) + torch.sum(confusion[i + 1:, i])  # false positive
-        tn, tp = 0, confusion[i, i]  # true negative, true positive
+        tp = confusion[i, i]  # true positive
 
-        for x in iter_label:
-            for y in iter_label:
-                if (x != i) & (y != i):
-                    tn += confusion[x, y]
+        tn = torch.sum(confusion) - (tp + fn + fp)
 
-        accuracy[i] = (tp + tn) / (tp + fn + fp + tn)
+        accuracy[i] = (tp + tn) / torch.sum(confusion)
         precision[i] = tp / (tp + fp)
         recall[i] = tp / (tp + fn)
         f1[i] = 2 * (precision[i] * recall[i]) / (precision[i] + recall[i])
 
     if all_metrics:
-        return DataFrame({
+        metrics_dict = {
             "Accuracy": accuracy.tolist(),
             "Precision": precision.tolist(),
             "Recall": recall.tolist(),
-            "F1": f1.tolist()})
+            "F1": f1.tolist()
+        }
+        return DataFrame(metrics_dict)
     else:
         return f1.mean()
 
 
-def eval_model(model: nn.Module, dataset: DataFrame, conf: Configuration, handler: EntityHandler, result="conlleval"):
+def eval_model(model: Module, dataset: DataFrame, conf: Configuration, handler_a: EntityHandler,
+               handler_b: EntityHandler, result="conlleval"):
     model.eval()
+    confusion_a = zeros(size=(len(handler_a), len(handler_a)))
+    confusion_b = zeros(size=(len(handler_b), len(handler_b)))
     true_label, pred_label = [], []  # using for conlleval
-    max_labels = len(handler.set_entities)
-    confusion = zeros(size=(max_labels, max_labels))  # Confusion matrix
+
     tokenizer = BertTokenizerFast.from_pretrained(conf.bert)
+    with no_grad():
+        for row in tqdm(dataset.itertuples(), total=dataset.shape[0], desc="Evaluating", mininterval=conf.refresh_rate):
 
-    for row in tqdm(dataset.itertuples(), total=dataset.shape[0], desc="Evaluating", mininterval=conf.refresh_rate):
+            # ========== Preprocessing ==========
+            # tokens = ["Hi","How","are","you"], labels = ["O","I-TREAT" ...]
+            tokens, labels_a, labels_b = row[1].split(), row[2].split(), row[3].split()
 
-        # tokens = ["Hi","How","are","you"], labels = ["O","I-TREAT" ...]
-        tokens, labels = row[1].split(), row[2].split()
+            token_text = tokenizer(tokens, is_split_into_words=True)
 
-        token_text = tokenizer(tokens, is_split_into_words=True)
-        aligned_labels, tag_mask = align_tags(labels, token_text.word_ids())
+            align_labels_a, tag_mask_a = align_tags(labels_a, token_text.word_ids())
+            align_labels_b, tag_mask_b = align_tags(labels_a, token_text.word_ids())
 
-        # prepare a model's inputs
-        input_ids = IntTensor(token_text["input_ids"])
-        att_mask = IntTensor(token_text["attention_mask"])
-        tag_mask = BoolTensor(tag_mask)  # using to correct classify the tags
+            # prepare a model's inputs
+            input_ids = IntTensor(token_text["input_ids"])
+            att_mask = IntTensor(token_text["attention_mask"])
 
-        # mapping the list of labels e.g. ["I-DRUG","O"] to list of id of labels e.g. ["4","7"]
-        labels_ids = LongTensor(handler.map_lab2id(aligned_labels))
+            tag_mask_a = BoolTensor(tag_mask_a)
+            tag_mask_b = BoolTensor(tag_mask_b)
 
-        if conf.cuda:
-            input_ids = input_ids.to(conf.gpu).unsqueeze(0)
-            att_mask = att_mask.to(conf.gpu).unsqueeze(0)
-            tag_mask = tag_mask.to(conf.gpu)
-            labels_ids = labels_ids.to(conf.gpu)
+            # mapping the list of labels e.g. ["I-DRUG","O"] to list of id of labels e.g. ["4","7"]
+            labels_ids_a = LongTensor(handler_a.map_lab2id(align_labels_a))
+            labels_ids_b = LongTensor(handler_b.map_lab2id(align_labels_b))
 
-        # Perform the prediction
-        path, _ = model(input_ids, att_mask, None)[0][0]  # path is a list of int
-        path = LongTensor(path)
+            if conf.cuda:
+                input_ids = input_ids.to(conf.gpu).unsqueeze(0)
+                att_mask = att_mask.to(conf.gpu).unsqueeze(0)
 
-        if conf.cuda:
-            path = path.to(conf.gpu)
+                tag_mask_a = tag_mask_a.to(conf.gpu)
+                tag_mask_b = tag_mask_b.to(conf.gpu)
 
-        logits = masked_select(path, tag_mask)
-        labels = masked_select(labels_ids, tag_mask)
+                labels_ids_a = labels_ids_a.to(conf.gpu)
+                labels_ids_b = labels_ids_b.to(conf.gpu)
+            # ========== Preprocessing ==========
 
-        # before mapping id -> labels, we have to build a confusion matrix
-        for lbl, pre in zip(labels, logits):
-            confusion[lbl, pre] += 1
+            # ========== Evaluating ==========
+            # Perform the prediction
+            _, path_a, path_b = model(input_ids, att_mask, labels_a, labels_b)
 
-        labels = handler.map_id2lab(labels, is_tensor=True)
-        logits = handler.map_id2lab(logits, is_tensor=True)
+            if conf.cuda:
+                path_a = path_a.to(conf.gpu)
+                path_b = path_b.to(conf.gpu)
 
-        true_label.extend(labels)
-        pred_label.extend(logits)
+            labels_a = masked_select(labels_ids_a, tag_mask_a)
+            path_a = masked_select(path_a, tag_mask_b)
+
+            for lbl, pre in zip(labels_a, path_a):
+                confusion_a[lbl, pre] += 1
+
+            labels_b = masked_select(labels_ids_b, tag_mask_b)
+            path_b = masked_select(path_b, tag_mask_b)
+
+            for lbl, pre in zip(labels_b, path_b):
+                confusion_b[lbl, pre] += 1
+            # ========== Evaluating ==========
+
+            labels_a = handler_a.map_id2lab(labels_a, is_tensor=True)
+            labels_b = handler_b.map_id2lab(labels_b, is_tensor=True)
+
+            path_a = handler_a.map_id2lab(path_a, is_tensor=True)
+            path_b = handler_b.map_id2lab(path_b, is_tensor=True)
+
+            true_label.extend(labels_a)
+            true_label.extend(labels_b)
+
+            pred_label.extend(path_a)
+            pred_label.extend(path_b)
 
     if result == "conlleval":
 
         old_stdout = sys.stdout
-        sys.stdout = output_results = StringIO()
+        sys.stdout = results = StringIO()
 
         # ConLL script evaluation https://github.com/sighsmile/conlleval
         evaluate(true_label, pred_label)
         sys.stdout = old_stdout
 
-    else:
-        output_results = scores(confusion, all_metrics=True)
-        output_results.index = handler.map_id2lab([*range(0, max_labels)])
+        return results.getvalue()
 
-    return output_results
+    else:
+        result_a = scores(confusion_a, all_metrics=True)
+        result_b = scores(confusion_b, all_metrics=True)
+
+        result_a.index = handler_a.map_id2lab([*range(0, len(handler_a))])
+        result_b.index = handler_b.map_id2lab([*range(0, len(handler_b))])
+
+        return result_a, result_b

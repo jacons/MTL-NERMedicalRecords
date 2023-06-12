@@ -28,11 +28,14 @@ def scores(confusion: Tensor, all_metrics=False):
     for i in iter_label:
         fn = torch.sum(confusion[i, :i]) + torch.sum(confusion[i, i + 1:])  # false negative
         fp = torch.sum(confusion[:i, i]) + torch.sum(confusion[i + 1:, i])  # false positive
-        tp = confusion[i, i]  # true positive
+        tn, tp = 0, confusion[i, i]  # true negative, true positive
 
-        tn = torch.sum(confusion) - (tp + fn + fp)
+        for x in iter_label:
+            for y in iter_label:
+                if (x != i) & (y != i):
+                    tn += confusion[x, y]
 
-        accuracy[i] = (tp + tn) / torch.sum(confusion)
+        accuracy[i] = (tp + tn) / (tp + fn + fp + tn)
         precision[i] = tp / (tp + fp)
         recall[i] = tp / (tp + fn)
         f1[i] = 2 * (precision[i] * recall[i]) / (precision[i] + recall[i])
@@ -54,7 +57,8 @@ def eval_model(model: Module, dataset: DataFrame, conf: Configuration, handler_a
     model.eval()
     confusion_a = zeros(size=(len(handler_a), len(handler_a)))
     confusion_b = zeros(size=(len(handler_b), len(handler_b)))
-    true_label, pred_label = [], []  # using for conlleval
+    true_label_a, pred_label_a = [], []  # using for conlleval
+    true_label_b, pred_label_b = [], []  # using for conlleval
 
     tokenizer = BertTokenizerFast.from_pretrained(conf.bert)
     with no_grad():
@@ -67,7 +71,7 @@ def eval_model(model: Module, dataset: DataFrame, conf: Configuration, handler_a
             token_text = tokenizer(tokens, is_split_into_words=True)
 
             align_labels_a, tag_mask_a = align_tags(labels_a, token_text.word_ids())
-            align_labels_b, tag_mask_b = align_tags(labels_a, token_text.word_ids())
+            align_labels_b, tag_mask_b = align_tags(labels_b, token_text.word_ids())
 
             # prepare a model's inputs
             input_ids = IntTensor(token_text["input_ids"])
@@ -93,14 +97,14 @@ def eval_model(model: Module, dataset: DataFrame, conf: Configuration, handler_a
 
             # ========== Evaluating ==========
             # Perform the prediction
-            _, path_a, path_b = model(input_ids, att_mask, labels_a, labels_b)
+            path_a, path_b = model(input_ids, att_mask)
 
             if conf.cuda:
                 path_a = path_a.to(conf.gpu)
                 path_b = path_b.to(conf.gpu)
 
             labels_a = masked_select(labels_ids_a, tag_mask_a)
-            path_a = masked_select(path_a, tag_mask_b)
+            path_a = masked_select(path_a, tag_mask_a)
 
             for lbl, pre in zip(labels_a, path_a):
                 confusion_a[lbl, pre] += 1
@@ -118,11 +122,11 @@ def eval_model(model: Module, dataset: DataFrame, conf: Configuration, handler_a
             path_a = handler_a.map_id2lab(path_a, is_tensor=True)
             path_b = handler_b.map_id2lab(path_b, is_tensor=True)
 
-            true_label.extend(labels_a)
-            true_label.extend(labels_b)
+            true_label_a.extend(labels_a)
+            true_label_b.extend(labels_b)
 
-            pred_label.extend(path_a)
-            pred_label.extend(path_b)
+            pred_label_a.extend(path_a)
+            pred_label_b.extend(path_b)
 
     if result == "conlleval":
 
@@ -130,7 +134,8 @@ def eval_model(model: Module, dataset: DataFrame, conf: Configuration, handler_a
         sys.stdout = results = StringIO()
 
         # ConLL script evaluation https://github.com/sighsmile/conlleval
-        evaluate(true_label, pred_label)
+        evaluate(true_label_a, pred_label_a)
+        evaluate(true_label_b, pred_label_b)
         sys.stdout = old_stdout
 
         return results.getvalue()
